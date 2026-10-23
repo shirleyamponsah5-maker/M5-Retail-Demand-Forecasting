@@ -1,0 +1,23 @@
+# Generated models and intermediate outputs
+models/
+outputs/
+
+# Python cache and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Jupyter temporary files
+.ipynb_checkpoints/
+
+# Local editor settings
+.vscode/
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# System files
+.DS_Store
+Thumbs.db

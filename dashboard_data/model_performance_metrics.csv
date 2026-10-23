@@ -1,0 +1,10 @@
+Model,Task,Metric,Value
+Tuned XGBoost Regressor,Demand Forecasting,MAE,121.359823
+Tuned XGBoost Regressor,Demand Forecasting,RMSE,182.665762
+Tuned XGBoost Regressor,Demand Forecasting,WAPE,8.612708
+Tuned XGBoost Regressor,Demand Forecasting,R2,0.975811
+XGBoost Classifier,High-Demand Classification,Accuracy,0.802381
+XGBoost Classifier,High-Demand Classification,Precision,0.726437
+XGBoost Classifier,High-Demand Classification,Recall,0.870523
+XGBoost Classifier,High-Demand Classification,F1,0.79198
+XGBoost Classifier,High-Demand Classification,ROC_AUC,0.909501
