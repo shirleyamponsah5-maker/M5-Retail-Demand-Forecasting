@@ -6,6 +6,7 @@ from pathlib import Path
 import plotly.graph_objects as go
 import plotly.express as px
 from sklearn.metrics import r2_score
+import joblib
 
 # --------------------------------------------------
 # 1. Configure the Streamlit page
@@ -24,6 +25,50 @@ st.set_page_config(
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "dashboard_data"
+
+# Load the final trained XGBoost forecasting model
+@st.cache_resource
+def load_forecasting_model():
+    model_path = PROJECT_ROOT / "models" / "final_xgboost_forecasting.joblib"
+
+    if not model_path.exists():
+        raise FileNotFoundError(f"Trained model not found: {model_path}")
+
+    return joblib.load(model_path)
+
+forecast_model_bundle = load_forecasting_model()
+forecast_model = forecast_model_bundle["model"]
+forecast_feature_columns = forecast_model_bundle["feature_columns"]
+
+
+# Load prepared historical test inputs for live model inference
+@st.cache_data
+def load_live_prediction_inputs():
+    file_path = DATA_DIR / "live_prediction_inputs.csv"
+
+    if not file_path.exists():
+        raise FileNotFoundError(
+            f"Live prediction inputs not found: {file_path}"
+        )
+
+    data = pd.read_csv(file_path)
+    data["date"] = pd.to_datetime(data["date"])
+
+    return data
+
+
+live_prediction_inputs = load_live_prediction_inputs()
+
+# Check that all 78 required model features are available
+missing_features = [
+    col for col in forecast_feature_columns
+    if col not in live_prediction_inputs.columns
+]
+
+if missing_features:
+    st.error(f"Missing model features: {missing_features}")
+    st.stop()
+
 
 # --------------------------------------------------
 # 3. Load the exported dashboard datasets
@@ -696,6 +741,83 @@ elif page == "Demand Forecasting":
         "Results are based on historical test data. "
         "This page does not generate live forecasts."
     )
+
+# ---------------------------------------------
+# LIVE PREDICTION DEMO
+# ---------------------------------------------
+st.divider()
+st.header("Live XGBoost Prediction Demo")
+
+st.info(
+    "Generate a new model prediction using a selected "
+    "historical test observation (March 28–April 24, 2016)."
+)
+
+# Select a store
+selected_store = st.selectbox(
+    "Select Walmart Store",
+    sorted(live_prediction_inputs["store_id"].unique()),
+    key="demo_store"
+)
+
+# Select a product category
+selected_category = st.selectbox(
+    "Select Product Category",
+    sorted(live_prediction_inputs["category"].unique()),
+    key="demo_category"
+)
+
+# Filter available historical observations
+demo_filtered = live_prediction_inputs[
+    (live_prediction_inputs["store_id"] == selected_store)
+    & (live_prediction_inputs["category"] == selected_category)
+].copy()
+
+# Select a date
+available_dates = sorted(demo_filtered["date"].dt.date.unique())
+
+selected_date = st.selectbox(
+    "Select Historical Test Date",
+    available_dates,
+    key="demo_date"
+)
+
+# Generate a fresh prediction when the button is clicked
+if st.button("Generate Prediction", type="primary"):
+
+    selected_row = demo_filtered[
+        demo_filtered["date"].dt.date == selected_date
+    ].iloc[[0]]
+
+    # Use the exact 78 features and original training order
+    model_input = selected_row[forecast_feature_columns].copy()
+
+    # Generate prediction using the saved trained model
+    prediction = float(forecast_model.predict(model_input)[0])
+
+    actual = float(selected_row["demand"].iloc[0])
+    error = actual - prediction
+
+    st.success("Prediction generated successfully!")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Predicted Demand", f"{prediction:,.0f} units")
+    col2.metric("Actual Demand", f"{actual:,.0f} units")
+    col3.metric("Forecast Error", f"{error:+,.0f} units")
+
+    if error > 0:
+        st.warning(
+            "The model underpredicted demand. "
+            "This could indicate a potential stockout risk."
+        )
+    elif error < 0:
+        st.info(
+            "The model overpredicted demand. "
+            "This could indicate potential excess inventory."
+        )
+    else:
+        st.success("Predicted demand matches actual demand.")
 
 
 # --------------------------------------------------
