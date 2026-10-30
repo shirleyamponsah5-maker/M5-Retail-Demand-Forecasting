@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 import plotly.graph_objects as go
 import plotly.express as px
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score, roc_curve, roc_auc_score
 import joblib
 
 # --------------------------------------------------
@@ -742,82 +742,82 @@ elif page == "Demand Forecasting":
         "This page does not generate live forecasts."
     )
 
-# ---------------------------------------------
-# LIVE PREDICTION DEMO
-# ---------------------------------------------
-st.divider()
-st.header("Live XGBoost Prediction Demo")
+    # ---------------------------------------------
+    # LIVE PREDICTION DEMO
+    # ---------------------------------------------
+    st.divider()
+    st.header("Live XGBoost Prediction Demo")
 
-st.info(
-    "Generate a new model prediction using a selected "
-    "historical test observation (March 28–April 24, 2016)."
-)
+    st.info(
+        "Generate a new model prediction using a selected "
+        "historical test observation (March 28–April 24, 2016)."
+    )
 
-# Select a store
-selected_store = st.selectbox(
-    "Select Walmart Store",
-    sorted(live_prediction_inputs["store_id"].unique()),
-    key="demo_store"
-)
+    # Select a store
+    selected_store = st.selectbox(
+        "Select Walmart Store",
+        sorted(live_prediction_inputs["store_id"].unique()),
+        key="demo_store"
+    )
 
-# Select a product category
-selected_category = st.selectbox(
-    "Select Product Category",
-    sorted(live_prediction_inputs["category"].unique()),
-    key="demo_category"
-)
+    # Select a product category
+    selected_category = st.selectbox(
+        "Select Product Category",
+        sorted(live_prediction_inputs["category"].unique()),
+        key="demo_category"
+    )
 
-# Filter available historical observations
-demo_filtered = live_prediction_inputs[
-    (live_prediction_inputs["store_id"] == selected_store)
-    & (live_prediction_inputs["category"] == selected_category)
-].copy()
+    # Filter available historical observations
+    demo_filtered = live_prediction_inputs[
+        (live_prediction_inputs["store_id"] == selected_store)
+        & (live_prediction_inputs["category"] == selected_category)
+    ].copy()
 
-# Select a date
-available_dates = sorted(demo_filtered["date"].dt.date.unique())
+    # Select a date
+    available_dates = sorted(demo_filtered["date"].dt.date.unique())
 
-selected_date = st.selectbox(
-    "Select Historical Test Date",
-    available_dates,
-    key="demo_date"
-)
+    selected_date = st.selectbox(
+        "Select Historical Test Date",
+        available_dates,
+        key="demo_date"
+    )
 
-# Generate a fresh prediction when the button is clicked
-if st.button("Generate Prediction", type="primary"):
+    # Generate a fresh prediction when the button is clicked
+    if st.button("Generate Prediction", type="primary"):
 
-    selected_row = demo_filtered[
-        demo_filtered["date"].dt.date == selected_date
-    ].iloc[[0]]
+        selected_row = demo_filtered[
+            demo_filtered["date"].dt.date == selected_date
+        ].iloc[[0]]
 
-    # Use the exact 78 features and original training order
-    model_input = selected_row[forecast_feature_columns].copy()
+        # Use the exact 78 features and original training order
+        model_input = selected_row[forecast_feature_columns].copy()
 
-    # Generate prediction using the saved trained model
-    prediction = float(forecast_model.predict(model_input)[0])
+        # Generate prediction using the saved trained model
+        prediction = float(forecast_model.predict(model_input)[0])
 
-    actual = float(selected_row["demand"].iloc[0])
-    error = actual - prediction
+        actual = float(selected_row["demand"].iloc[0])
+        error = actual - prediction
 
-    st.success("Prediction generated successfully!")
+        st.success("Prediction generated successfully!")
 
-    col1, col2, col3 = st.columns(3)
+        col1, col2, col3 = st.columns(3)
 
-    col1.metric("Predicted Demand", f"{prediction:,.0f} units")
-    col2.metric("Actual Demand", f"{actual:,.0f} units")
-    col3.metric("Forecast Error", f"{error:+,.0f} units")
+        col1.metric("Predicted Demand", f"{prediction:,.0f} units")
+        col2.metric("Actual Demand", f"{actual:,.0f} units")
+        col3.metric("Forecast Error", f"{error:+,.0f} units")
 
-    if error > 0:
-        st.warning(
-            "The model underpredicted demand. "
-            "This could indicate a potential stockout risk."
-        )
-    elif error < 0:
-        st.info(
-            "The model overpredicted demand. "
-            "This could indicate potential excess inventory."
-        )
-    else:
-        st.success("Predicted demand matches actual demand.")
+        if error > 0:
+            st.warning(
+                "The model underpredicted demand. "
+                "This could indicate a potential stockout risk."
+            )
+        elif error < 0:
+            st.info(
+                "The model overpredicted demand. "
+                "This could indicate potential excess inventory."
+            )
+        else:
+            st.success("Predicted demand matches actual demand.")
 
 
 # --------------------------------------------------
@@ -1057,6 +1057,82 @@ elif page == "High-Demand Alerts":
         "This threshold was selected during model validation "
         "to prioritize identifying high-demand observations."
     )
+
+    # ------------------------------------------
+    # 8.5A Interactive threshold and ROC analysis
+    # ------------------------------------------
+    st.divider()
+    st.subheader("Interactive Classification Threshold Analysis")
+    st.write(
+        "Explore how changing the probability cutoff affects historical "
+        "high-demand detection. The deployed project decision threshold "
+        "remains 0.25; changing this slider is for analysis only."
+    )
+    threshold = st.slider(
+        "High-demand probability threshold", min_value=0.05,
+        max_value=0.95, value=0.25, step=0.05,
+        key="interactive_alert_threshold"
+    )
+    y_true = filtered_alerts["actual_high_demand"].astype(int).to_numpy()
+    y_prob = pd.to_numeric(
+        filtered_alerts["high_demand_probability"], errors="coerce"
+    ).to_numpy()
+    valid = np.isfinite(y_prob)
+    if not valid.all():
+        st.warning(f"Excluded {(~valid).sum()} rows with missing probability values.")
+    y_true, y_prob = y_true[valid], y_prob[valid]
+    if len(y_true) == 0:
+        st.warning("No valid prediction probabilities in this selection.")
+    else:
+        y_adjusted = (y_prob >= threshold).astype(int)
+        tp_new = int(((y_true == 1) & (y_adjusted == 1)).sum())
+        fp_new = int(((y_true == 0) & (y_adjusted == 1)).sum())
+        fn_new = int(((y_true == 1) & (y_adjusted == 0)).sum())
+        tn_new = int(((y_true == 0) & (y_adjusted == 0)).sum())
+        precision_new = tp_new / (tp_new + fp_new) if tp_new + fp_new else 0.0
+        recall_new = tp_new / (tp_new + fn_new) if tp_new + fn_new else 0.0
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Precision at threshold", f"{precision_new:.2%}")
+        c2.metric("Recall at threshold", f"{recall_new:.2%}")
+        c3.metric("Alerts", f"{tp_new + fp_new:,}")
+        c4.metric("Missed high-demand", f"{fn_new:,}")
+        st.caption(
+            "Threshold changes recalculate results for the selected historical "
+            "observations only; they do not retrain the model or alter exported alerts."
+        )
+        st.subheader("ROC Curve — High-Demand Classifier")
+        if np.unique(y_true).size < 2:
+            st.info("ROC requires both normal-demand and high-demand examples. "
+                    "Broaden the store, category, or date filters.")
+        else:
+            fpr, tpr, roc_thresholds = roc_curve(y_true, y_prob)
+            auc_value = roc_auc_score(y_true, y_prob)
+            fpr_selected = fp_new / (fp_new + tn_new) if fp_new + tn_new else 0.0
+            tpr_selected = recall_new
+            fig_roc = go.Figure()
+            fig_roc.add_trace(go.Scatter(
+                x=fpr, y=tpr, mode="lines", name=f"ROC (AUC = {auc_value:.4f})"
+            ))
+            fig_roc.add_trace(go.Scatter(
+                x=[0, 1], y=[0, 1], mode="lines", name="Random classifier",
+                line=dict(dash="dash", color="gray")
+            ))
+            fig_roc.add_trace(go.Scatter(
+                x=[fpr_selected], y=[tpr_selected], mode="markers",
+                marker=dict(size=13, color="orange"),
+                name=f"Threshold = {threshold:.2f}"
+            ))
+            fig_roc.update_layout(
+                xaxis_title="False Positive Rate",
+                yaxis_title="True Positive Rate (Recall)",
+                xaxis=dict(range=[0, 1]), yaxis=dict(range=[0, 1]),
+                title="ROC Curve on Selected Historical Test Observations"
+            )
+            st.plotly_chart(fig_roc, use_container_width=True)
+            st.caption(
+                "ROC-AUC is calculated from the currently selected test rows. "
+                "It can differ from the full-test ROC-AUC of 0.9095 when filters are applied."
+            )
 
     # ------------------------------------------
     # 8.6 High-demand alerts over time
