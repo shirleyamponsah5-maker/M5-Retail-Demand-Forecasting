@@ -1,0 +1,9 @@
+Feature Group,Importance,Importance (%)
+Historical Demand Lags,0.6158539,61.585392
+Rolling Demand Statistics,0.18415223,18.415222
+Events & SNAP,0.07393089,7.393089
+Store & Geographic Features,0.07233632,7.2336326
+Calendar & Seasonality,0.029287739,2.9287739
+Product Categories,0.019266086,1.9266086
+Pricing Features,0.0035478347,0.35478348
+Other Features,0.0016250025,0.16250025
